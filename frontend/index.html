@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>TraceLens</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  :root { --bg:#0a0e13; --panel:#111823; --border:#1e2836; --text:#e6edf3; --muted:#8b98a5; --accent:#58a6ff; --error:#f85149; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,Segoe UI,Roboto,sans-serif; }
+  header { padding:18px 26px; border-bottom:1px solid var(--border); }
+  header h1 { margin:0; font-size:19px; }
+  .sub { color:var(--muted); font-size:12px; }
+  .container { padding:22px 26px; max-width:800px; margin:0 auto; }
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:18px; margin-bottom:16px; }
+  textarea { width:100%; background:#0a0e13; color:var(--text); border:1px solid var(--border); border-radius:6px; padding:8px; font-family:monospace; font-size:11px; min-height:200px; }
+  button { background:var(--accent); color:#0a0e13; border:none; padding:9px 16px; border-radius:6px; font-weight:600; cursor:pointer; margin-top:10px; margin-right:6px; }
+  .bar { display:flex; align-items:center; margin:4px 0; font-size:12px; }
+  .bar-track { flex:1; background:#1c2530; height:10px; border-radius:4px; overflow:hidden; margin:0 8px; }
+  .bar-fill { height:100%; background:var(--accent); }
+  .card { border:1px solid var(--border); border-radius:8px; padding:10px; margin-bottom:8px; font-size:12px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState } = React;
+const API_BASE = "http://localhost:8000";
+
+const DEFAULT_SPANS = JSON.stringify([
+  {"trace_id":"t1","span_id":"root","service_name":"gateway","operation_name":"handle_request","start_time_ms":0,"duration_ms":250},
+  {"trace_id":"t1","span_id":"auth","parent_span_id":"root","service_name":"auth","operation_name":"verify_token","start_time_ms":0,"duration_ms":50},
+  {"trace_id":"t1","span_id":"dbcall","parent_span_id":"root","service_name":"db","operation_name":"query","start_time_ms":0,"duration_ms":200}
+], null, 2);
+
+function App() {
+  const [text, setText] = useState(DEFAULT_SPANS);
+  const [analysis, setAnalysis] = useState(null);
+  const [status, setStatus] = useState("");
+
+  async function ingestAndAnalyze() {
+    setStatus("Ingesting...");
+    try {
+      const spans = JSON.parse(text);
+      await fetch(API_BASE + "/ingest", {
+        method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(spans),
+      });
+      const resp = await fetch(API_BASE + "/analyze/" + spans[0].trace_id);
+      setAnalysis(await resp.json());
+      setStatus("");
+    } catch (e) { setStatus("Error: " + e.message); }
+  }
+
+  const maxDur = analysis ? Math.max(...analysis.critical_path.map(s => s.duration_ms), 1) : 1;
+
+  return (
+    <div>
+      <header>
+        <h1>🔭 TraceLens</h1>
+        <div className="sub">Distributed tracing — critical path + latency anomaly detection</div>
+      </header>
+      <div className="container">
+        <div className="panel">
+          <textarea value={text} onChange={e => setText(e.target.value)} />
+          <button onClick={ingestAndAnalyze}>Ingest & Analyze</button>
+          <div className="sub">{status}</div>
+        </div>
+
+        {analysis && (
+          <div className="panel">
+            <div className="sub">Total trace duration: <strong>{analysis.total_duration_ms}ms</strong> across {analysis.span_count} spans</div>
+            <div style={{marginTop: 10}}>
+              {analysis.critical_path.map((s, i) => (
+                <div className="bar" key={i}>
+                  <span style={{width: 140}}>{s.service_name}/{s.operation_name}</span>
+                  <div className="bar-track"><div className="bar-fill" style={{width: (s.duration_ms/maxDur*100)+"%"}} /></div>
+                  <span>{s.duration_ms}ms</span>
+                </div>
+              ))}
+            </div>
+            {analysis.latency_anomalies.length > 0 && (
+              <div className="card">⚠️ {analysis.latency_anomalies.length} latency anomaly(ies) detected</div>
+            )}
+            {analysis.error_cascades.length > 0 && (
+              <div className="card" style={{borderColor: "#f85149"}}>🔥 {analysis.error_cascades.length} error cascade(s) detected</div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
