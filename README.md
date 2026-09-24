@@ -85,4 +85,4 @@ straightforward percentile/cascade approach rather than the full
 statistical anomaly detection a production APM tool (Datadog, Honeycomb)
 would use. The critical-path algorithm and percentile computation are
 both real and independently tested -- the reusable part that carries
-over once real OTel collector ingestion and a real storage backend are added.
+over once real OTel collector ingestion and a real storage backend are added..
